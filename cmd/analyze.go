@@ -44,12 +44,25 @@ var analyzeCmd = &cobra.Command{
 		for _, e := range errors {
 			fmt.Printf("🔴 ERROR DETECTED (Line %d)\n", e.LineNumber)
 			fmt.Println("Type:", e.Type)
-			info := stacktrace.ExtractFileLine(e.Context)
 
 			fmt.Println("Message:", e.Message)
-			fmt.Println("Location:")
+
+			// 🔥 PHASE 6 ADD HERE
+			exp := analyzer.ExplainError(e.Message)
+
+			fmt.Println("\nExplanation:")
+			fmt.Println(exp.Reason)
+
+			fmt.Println("\nSuggestion:")
+			fmt.Println(exp.Suggestion)
+
+			// existing stack trace logic
+			info := stacktrace.ExtractFileLine(e.Context)
+
+			fmt.Println("\nLocation:")
 			fmt.Println("→ File:", info.File)
 			fmt.Println("→ Line:", info.Line)
+
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 
@@ -63,7 +76,11 @@ var analyzeCmd = &cobra.Command{
 		fmt.Println("Top Issues:")
 
 		for errType, count := range summary.ErrorCount {
-			fmt.Printf("• %s → %d time\n", errType, count)
+			if count == 1 {
+				fmt.Printf("• %s → %d time\n", errType, count)
+			} else {
+				fmt.Printf("• %s → %d times\n", errType, count)
+			}
 		}
 
 	},
