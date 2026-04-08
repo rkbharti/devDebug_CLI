@@ -2,6 +2,7 @@ package stacktrace
 
 import (
 	"regexp" //regular expression package(find patterns inside text)
+	"strings"
 )
 
 type StackInfo struct {
@@ -14,6 +15,7 @@ func ExtractFileLine(log string) StackInfo {
 
 	// Example match: main.go:45
 	re := regexp.MustCompile(`([\w\.]+\.\w+):(\d+)`)
+	log = strings.TrimSpace(log)
 	match := re.FindStringSubmatch(log)
 
 	if len(match) >= 3 {

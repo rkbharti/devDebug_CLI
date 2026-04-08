@@ -8,6 +8,7 @@ import (
 	"github.com/rkbharti/devdebug/internal/input"
 	"github.com/rkbharti/devdebug/internal/patterns"
 	"github.com/rkbharti/devdebug/internal/stacktrace"
+	"github.com/rkbharti/devdebug/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -39,25 +40,28 @@ var analyzeCmd = &cobra.Command{
 		// Detect erros
 		errors := patterns.DetectErrors(lines)
 
-		fmt.Println("\n🚨 Error Report:")
+		fmt.Println(ui.TitleStyle.Render("🚨 ERROR REPORT"))
 
 		for _, e := range errors {
-			fmt.Printf("🔴 ERROR DETECTED (Line %d)\n", e.LineNumber)
+			fmt.Println(ui.ErrorStyle.Render(fmt.Sprintf("🔴 ERROR DETECTED (Line %d)", e.LineNumber)))
 			fmt.Println("Type:", e.Type)
 
-			fmt.Println("Message:", e.Message)
+			fmt.Println(ui.InfoStyle.Render("Message:"), e.Message)
 
-			// 🔥 PHASE 6 ADD HERE
+			// 🔥 PHASE 6
 			exp := analyzer.ExplainError(e.Message)
+			
 
-			fmt.Println("\nExplanation:")
+			fmt.Println(ui.WarningStyle.Render("Explanation:"))
 			fmt.Println(exp.Reason)
 
-			fmt.Println("\nSuggestion:")
+			fmt.Println(ui.SuccessStyle.Render("Suggestion:"))
 			fmt.Println(exp.Suggestion)
 
 			// existing stack trace logic
-			info := stacktrace.ExtractFileLine(e.Context)
+			combined := e.Message + " " + e.Context
+			info := stacktrace.ExtractFileLine(combined)
+			
 
 			fmt.Println("\nLocation:")
 			fmt.Println("→ File:", info.File)
@@ -69,7 +73,7 @@ var analyzeCmd = &cobra.Command{
 		// 🔥 Aggregate Errors``
 		summary := analyzer.AggregateErrors(errors)
 
-		fmt.Println("\n📊 SUMMARY REPORT")
+		fmt.Println(ui.TitleStyle.Render("📊 SUMMARY REPORT"))
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Printf("Total Errors: %d\n\n", summary.TotalErrors)
 

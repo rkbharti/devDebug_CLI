@@ -1,6 +1,8 @@
 package patterns
 
-import "strings"
+import (
+	"strings"
+)
 
 type ErrorMatch struct {
 	LineNumber int
@@ -16,10 +18,20 @@ func DetectErrors(lines []string) []ErrorMatch {
 	for i, line := range lines {
 
 		lower := strings.ToLower(line)
-		var context string
+
 		// to get next line of log/ code / or any file
-		if i+1 < len(lines) {
-			context = lines[i+1]
+		var context string
+
+		// check next lines safely
+		for j := i + 1; j < len(lines); j++ {
+			next := strings.TrimSpace(lines[j])
+
+			if next == "" {
+				continue
+			}
+
+			context = next
+			break
 		}
 
 		if strings.Contains(lower, "panic") {
@@ -34,13 +46,14 @@ func DetectErrors(lines []string) []ErrorMatch {
 				LineNumber: i + 1,
 				Type:       "General Error",
 				Message:    line,
-				Context: context,
+				Context:    context,
 			})
 		} else if strings.Contains(lower, "timeout") {
 			errors = append(errors, ErrorMatch{
 				LineNumber: i + 1,
 				Type:       "Timeout Error",
 				Message:    line,
+				Context:    context,
 			})
 		}
 	}
