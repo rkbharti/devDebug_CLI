@@ -16,8 +16,18 @@ type ErrorMatch struct {
 
 // DetectError scans a single log line and returns matched error
 func DetectError(line string, lineNum int, context string, cfg *config.Config) *ErrorMatch {
+	// 🚫 Ignore empty or whitespace lines
+	if strings.TrimSpace(line) == "" {
+		return nil
+	}
 
+	// 🚫 Ignore non-error logs (basic noise filtering)
 	lower := strings.ToLower(line)
+
+	if strings.Contains(lower, "info") ||
+		strings.Contains(lower, "debug") {
+		return nil
+	}
 
 	// 🔥 1. CUSTOM CONFIG PATTERNS (SAFE + VALIDATED)
 	if cfg != nil {

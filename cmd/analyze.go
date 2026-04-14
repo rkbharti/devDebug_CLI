@@ -26,13 +26,13 @@ var analyzeCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 
 	Run: func(cmd *cobra.Command, args []string) {
+
 		cfg, err := config.LoadConfig("devdebug.yaml")
-
 		if err != nil {
-			fmt.Println("⚠️ Config not loaded (using default rules)",err)
-
-			cfg = nil // fallback to default detection
+			fmt.Println("⚠️ Config not loaded (using default rules)")
+			cfg = nil
 		}
+
 		file := args[0]
 
 		info, err := os.Stat(file)
@@ -50,7 +50,7 @@ var analyzeCmd = &cobra.Command{
 
 			err := input.FollowFile(file, func(line string) {
 
-				e := patterns.DetectError(line, 0, "", cfg) // ✅ FIXED
+				e := patterns.DetectError(line, 0, "", cfg)
 
 				if e != nil {
 					fmt.Println(ui.ErrorStyle.Render("\n🔴 ERROR DETECTED"))
@@ -101,16 +101,20 @@ var analyzeCmd = &cobra.Command{
 
 				input.ProcessFile(fullPath, func(line string, lineNum int) {
 
-					if lastError != nil && strings.TrimSpace(line) != "" {
-						lastError.Context = line
-						lastError = nil
+					if lastError != nil {
+
+						if strings.TrimSpace(line) == "" {
+							lastError = nil
+							return
+						}
+
+						lastError.Context += "\n" + line
 						return
 					}
 
-					e := patterns.DetectError(line, lineNum, "", cfg) // ✅ FIXED
+					e := patterns.DetectError(line, lineNum, "", cfg)
 					if e != nil {
 						e.File = f.Name()
-
 						errors = append(errors, *e)
 						lastError = &errors[len(errors)-1]
 					}
@@ -118,22 +122,26 @@ var analyzeCmd = &cobra.Command{
 			}
 
 		} else {
-			// 🔥 SINGLE FILE MODE
 
+			// 🔥 SINGLE FILE MODE
 			var lastError *patterns.ErrorMatch
 
 			input.ProcessFile(file, func(line string, lineNum int) {
 
-				if lastError != nil && strings.TrimSpace(line) != "" {
-					lastError.Context = line
-					lastError = nil
+				if lastError != nil {
+
+					if strings.TrimSpace(line) == "" {
+						lastError = nil
+						return
+					}
+
+					lastError.Context += "\n" + line
 					return
 				}
 
-				e := patterns.DetectError(line, lineNum, "", cfg) // ✅ FIXED
+				e := patterns.DetectError(line, lineNum, "", cfg)
 				if e != nil {
 					e.File = file
-
 					errors = append(errors, *e)
 					lastError = &errors[len(errors)-1]
 				}
@@ -149,27 +157,45 @@ var analyzeCmd = &cobra.Command{
 			)
 		}
 
-		var filteredErrors []patterns.ErrorMatch
-
+		// 🔥 FILTER
+		var summaryData []patterns.ErrorMatch
 		for _, e := range errors {
-
 			if filterType != "" {
 				if !strings.Contains(strings.ToLower(e.Type), strings.ToLower(filterType)) {
 					continue
 				}
 			}
+			summaryData = append(summaryData, e)
+		}
 
-			filteredErrors = append(filteredErrors, e)
+		// 🔥 GROUPING (Phase 14 Step 3)
+		grouped := make(map[string][]patterns.ErrorMatch)
+		for _, e := range summaryData {
+			grouped[e.Message] = append(grouped[e.Message], e)
+		}
+
+		// 🔥 PRINT GROUPED OUTPUT
+		for msg, group := range grouped {
+
+			count := len(group)
+			e := group[0]
 
 			fmt.Println(ui.ErrorStyle.Render("🔴 ERROR DETECTED"))
-			fmt.Println(ui.InfoStyle.Render(
-				fmt.Sprintf("Log Location: %s (Line %d)", e.File, e.LineNumber),
-			))
+
+			if count == 1 {
+				fmt.Println(ui.InfoStyle.Render(
+					fmt.Sprintf("Log Location: %s (Line %d)", e.File, e.LineNumber),
+				))
+			} else {
+				fmt.Println(ui.WarningStyle.Render(
+					fmt.Sprintf("Occurred %d times", count),
+				))
+			}
 
 			fmt.Println("Type:", e.Type)
-			fmt.Println(ui.InfoStyle.Render("Message:"), e.Message)
+			fmt.Println(ui.InfoStyle.Render("Message:"), msg)
 
-			exp := analyzer.ExplainError(e.Message)
+			exp := analyzer.ExplainError(msg)
 
 			fmt.Println(ui.WarningStyle.Render("\nExplanation:"))
 			fmt.Println(exp.Reason)
@@ -187,13 +213,7 @@ var analyzeCmd = &cobra.Command{
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 
-		var summaryData []patterns.ErrorMatch
-		if filterType != "" {
-			summaryData = filteredErrors
-		} else {
-			summaryData = errors
-		}
-
+		// 🔥 SUMMARY
 		summary := analyzer.AggregateErrors(summaryData)
 
 		fmt.Println(ui.TitleStyle.Render("\n📊 SUMMARY REPORT"))
@@ -202,7 +222,6 @@ var analyzeCmd = &cobra.Command{
 		fmt.Printf("Total Errors: %d\n\n", summary.TotalErrors)
 
 		fmt.Println("Top Issues:")
-
 		for errType, count := range summary.ErrorCount {
 			if count == 1 {
 				fmt.Printf("• %s → %d time\n", errType, count)
@@ -211,6 +230,7 @@ var analyzeCmd = &cobra.Command{
 			}
 		}
 
+		// 🔥 FILE SUMMARY
 		fileCount := make(map[string]int)
 		for _, e := range summaryData {
 			fileCount[e.File]++
@@ -227,6 +247,7 @@ var analyzeCmd = &cobra.Command{
 			}
 		}
 
+		// 🔥 EXPORT
 		if outputFormat != "" {
 
 			var exportErr error

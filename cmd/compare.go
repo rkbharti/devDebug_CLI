@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rkbharti/devdebug/internal/analyzer"
 	"github.com/rkbharti/devdebug/internal/config"
@@ -155,9 +156,16 @@ func analyzeFile(file string, cfg *config.Config) []patterns.ErrorMatch {
 
 	input.ProcessFile(file, func(line string, lineNum int) {
 
-		if lastError != nil && line != "" {
-			lastError.Context = line
-			lastError = nil
+		if lastError != nil {
+
+			// stop context on empty line
+			if strings.TrimSpace(line) == "" {
+				lastError = nil
+				return
+			}
+
+			// append stacktrace lines
+			lastError.Context += "\n" + line
 			return
 		}
 
