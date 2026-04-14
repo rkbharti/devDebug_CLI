@@ -9,6 +9,7 @@ type ErrorMatch struct {
 	Type       string
 	Message    string
 	Context    string
+	File       string
 }
 
 // DetectErrors scans logs and finds errors

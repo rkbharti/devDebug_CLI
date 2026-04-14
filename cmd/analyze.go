@@ -27,16 +27,16 @@ var analyzeCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		file := args[0]
 
-		// check file exists
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			fmt.Println(ui.ErrorStyle.Render("❌ File does not exist: " + file))
+		info, err := os.Stat(file)
+		if err != nil {
+			fmt.Println("❌ Error:", err)
 			return
 		}
 
 		fmt.Println(ui.SuccessStyle.Render("✅ File found: " + file))
 		fmt.Println(ui.InfoStyle.Render("🔍 Starting analysis..."))
 
-		// ADD WATCH BLOCK(MODE)
+		// 🔥 WATCH MODE
 		if follow {
 			fmt.Println("👀 Watching log file in real-time...")
 
@@ -45,7 +45,6 @@ var analyzeCmd = &cobra.Command{
 				e := patterns.DetectError(line, 0, "")
 
 				if e != nil {
-
 					fmt.Println(ui.ErrorStyle.Render("\n🔴 ERROR DETECTED"))
 					fmt.Println("Type:", e.Type)
 					fmt.Println("Message:", e.Message)
@@ -67,66 +66,102 @@ var analyzeCmd = &cobra.Command{
 			return
 		}
 
-		// read file with streaming logic nd processuing file
 		var errors []patterns.ErrorMatch
 
-		var lastError *patterns.ErrorMatch
+		// 🔥 FOLDER MODE
+		if info.IsDir() {
 
-		err := input.ProcessFile(file, func(line string, lineNum int) {
-
-			// If previous error exists → use this line as context
-			if lastError != nil && strings.TrimSpace(line) != "" {
-				lastError.Context = line
-				lastError = nil
+			files, err := os.ReadDir(file)
+			if err != nil {
+				fmt.Println("❌ Failed to read directory:", err)
 				return
 			}
 
-			// Detect new error
-			e := patterns.DetectError(line, lineNum, "")
+			fmt.Println("📂 Scanning folder:", file)
 
-			if e != nil {
-				errors = append(errors, *e)
+			for _, f := range files {
 
-				// store pointer to update context next line
-				lastError = &errors[len(errors)-1]
+				if !strings.HasSuffix(f.Name(), ".log") {
+					continue
+				}
+
+				fullPath := file + "/" + f.Name()
+
+				fmt.Println("📄 Processing:", f.Name())
+
+				var lastError *patterns.ErrorMatch
+
+				input.ProcessFile(fullPath, func(line string, lineNum int) {
+
+					if lastError != nil && strings.TrimSpace(line) != "" {
+						lastError.Context = line
+						lastError = nil
+						return
+					}
+
+					e := patterns.DetectError(line, lineNum, "")
+					if e != nil {
+						e.File = f.Name() // ✅ correct file name
+
+						errors = append(errors, *e) // ✅ FIXED
+						lastError = &errors[len(errors)-1]
+					}
+				})
 			}
-		})
 
-		if err != nil {
-			fmt.Println(ui.ErrorStyle.Render("❌ Error reading file: " + err.Error()))
-			return
+		} else {
+			// 🔥 SINGLE FILE MODE
+
+			var lastError *patterns.ErrorMatch
+
+			input.ProcessFile(file, func(line string, lineNum int) {
+
+				if lastError != nil && strings.TrimSpace(line) != "" {
+					lastError.Context = line
+					lastError = nil
+					return
+				}
+
+				e := patterns.DetectError(line, lineNum, "")
+				if e != nil {
+					e.File = file // ✅ add file name
+
+					errors = append(errors, *e)
+					lastError = &errors[len(errors)-1]
+				}
+			})
 		}
 
 		fmt.Println(ui.TitleStyle.Render("\n🚨 ERROR REPORT"))
 
-		// 🔥 Show filter ONCE (correct placement)
 		if filterType != "" {
 			fmt.Println(
 				ui.InfoStyle.Render("🔍 Showing only:") + " " +
 					ui.WarningStyle.Render(filterType) + " errors",
 			)
 		}
+
 		var filteredErrors []patterns.ErrorMatch
 
 		for _, e := range errors {
 
-			// 🔥 Apply filter
 			if filterType != "" {
 				if !strings.Contains(strings.ToLower(e.Type), strings.ToLower(filterType)) {
 					continue
 				}
 			}
+
 			filteredErrors = append(filteredErrors, e)
 
-			fmt.Println(ui.ErrorStyle.Render(
-				fmt.Sprintf("🔴 ERROR DETECTED (Line %d)", e.LineNumber),
+			fmt.Println(ui.ErrorStyle.Render("🔴 ERROR DETECTED"))
+			//print log location or file name with line number if we have multiple logs
+			fmt.Println(ui.InfoStyle.Render(
+				fmt.Sprintf("Log Location: %s (Line %d)", e.File, e.LineNumber),
 			))
 
 			fmt.Println("Type:", e.Type)
-
 			fmt.Println(ui.InfoStyle.Render("Message:"), e.Message)
 
-			// 🔥 Explanation (Phase 6)
 			exp := analyzer.ExplainError(e.Message)
 
 			fmt.Println(ui.WarningStyle.Render("\nExplanation:"))
@@ -135,20 +170,17 @@ var analyzeCmd = &cobra.Command{
 			fmt.Println(ui.SuccessStyle.Render("\nSuggestion:"))
 			fmt.Println(exp.Suggestion)
 
-			// 🔥 Location extraction (robust)
 			combined := e.Message + " " + e.Context
 			info := stacktrace.ExtractFileLine(combined)
 
-			fmt.Println(ui.InfoStyle.Render("\nLocation:"))
+			fmt.Println(ui.InfoStyle.Render("\n Code Location:"))
 			fmt.Println("→ File:", info.File)
 			fmt.Println("→ Line:", info.Line)
 
 			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		}
 
-		// 🔥 Summary
 		var summaryData []patterns.ErrorMatch
-
 		if filterType != "" {
 			summaryData = filteredErrors
 		} else {
@@ -156,6 +188,7 @@ var analyzeCmd = &cobra.Command{
 		}
 
 		summary := analyzer.AggregateErrors(summaryData)
+
 		fmt.Println(ui.TitleStyle.Render("\n📊 SUMMARY REPORT"))
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -170,6 +203,25 @@ var analyzeCmd = &cobra.Command{
 				fmt.Printf("• %s → %d times\n", errType, count)
 			}
 		}
+
+		// file count map to show which file have how much error
+		fileCount := make(map[string]int)
+
+		for _, e := range summaryData {
+			fileCount[e.File]++
+		}
+
+		fmt.Println("\n📂 FILE SUMMARY")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+		for file, count := range fileCount {
+			if count == 1 {
+				fmt.Printf("%s → %d error\n", file, count)
+			} else {
+				fmt.Printf("%s → %d errors\n", file, count)
+			}
+		}
+
 		if outputFormat != "" {
 
 			var exportErr error
@@ -198,25 +250,7 @@ var analyzeCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(analyzeCmd)
 
-	analyzeCmd.Flags().StringVarP(
-		&filterType,
-		"type",
-		"t",
-		"",
-		"Filter errors by type (panic, error, timeout)",
-	)
-	analyzeCmd.Flags().StringVarP(
-		&outputFormat,
-		"format",
-		"f",
-		"",
-		"Export Format : json or md",
-	)
-	analyzeCmd.Flags().BoolVarP(
-		&follow,
-		"follow",
-		"",
-		false,
-		"Follow log file in real time",
-	)
+	analyzeCmd.Flags().StringVarP(&filterType, "type", "t", "", "Filter errors by type (panic, error, timeout)")
+	analyzeCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Export Format : json or md")
+	analyzeCmd.Flags().BoolVarP(&follow, "follow", "", false, "Follow log file in real time")
 }
