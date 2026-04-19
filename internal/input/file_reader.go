@@ -5,9 +5,9 @@ import (
 	"os"
 )
 
-// process stream file line-by-line
-
-func ProcessFile(filepath string, handle func(string, int)) error {
+// ProcessFile reads a file line-by-line and calls handle() for each line.
+// Each line is parsed (JSON or plain text) before being passed to handle.
+func ProcessFile(filepath string, handle func(ParsedLine, int)) error {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return err
@@ -15,12 +15,16 @@ func ProcessFile(filepath string, handle func(string, int)) error {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	// increase buffer size — JSON log lines can be long
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	lineNum := 1
 
 	for scanner.Scan() {
-		handle(scanner.Text(), lineNum)
+		parsed := ParseLine(scanner.Text())
+		handle(parsed, lineNum)
 		lineNum++
 	}
+
 	return scanner.Err()
 }

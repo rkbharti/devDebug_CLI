@@ -97,7 +97,8 @@ func handleWatchMode(file string, cfg *config.Config, quiet bool) {
 	printInfo("👀 Watching log file in real-time... (Ctrl+C to stop)", quiet)
 
 	err := input.FollowFile(file, func(line string) {
-		e := patterns.DetectError(line, 0, "", cfg)
+		parsed := input.ParseLine(line)   
+		e := patterns.DetectError(parsed, 0, "", cfg)
 		if e == nil {
 			return
 		}
@@ -160,24 +161,24 @@ func handleSingleFileMode(file string, cfg *config.Config) []patterns.ErrorMatch
 // SHARED — collectErrors (used by both folder and single file)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// FIND this function in analyze.go and update the callback:
+
 func collectErrors(filepath string, label string, cfg *config.Config) []patterns.ErrorMatch {
 	var errors []patterns.ErrorMatch
 	var lastError *patterns.ErrorMatch
 
-	input.ProcessFile(filepath, func(line string, lineNum int) {
+	input.ProcessFile(filepath, func(parsed input.ParsedLine, lineNum int) { // ← ParsedLine now
 
-		// ── context accumulation ──────────────────────────────────────────────
 		if lastError != nil {
-			if strings.TrimSpace(line) == "" {
+			if strings.TrimSpace(parsed.Raw) == "" { // ← use parsed.Raw
 				lastError = nil
 				return
 			}
-			lastError.Context += "\n" + line
+			lastError.Context += "\n" + parsed.Raw // ← use parsed.Raw
 			return
 		}
 
-		// ── error detection ───────────────────────────────────────────────────
-		e := patterns.DetectError(line, lineNum, "", cfg)
+		e := patterns.DetectError(parsed, lineNum, "", cfg) // ← pass parsed directly
 		if e != nil {
 			e.File = label
 			errors = append(errors, *e)

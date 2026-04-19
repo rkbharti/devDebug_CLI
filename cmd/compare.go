@@ -21,37 +21,33 @@ var compareCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 
 		cfg, err := config.LoadConfig("devdebug.yaml")
-
 		if err != nil {
-			fmt.Println("⚠️ Config not loaded (using default rules)", err)
-
-			cfg = nil // fallback to default detection
-		} //  ADD CONFIG
+			fmt.Println("⚠️ Config not loaded (using default rules)")
+			cfg = nil
+		}
 
 		oldFile := args[0]
 		newFile := args[1]
 
-		// check files
 		if _, err := os.Stat(oldFile); os.IsNotExist(err) {
-			fmt.Println("❌ Old file not found:", oldFile)
-			return
+			fmt.Fprintln(os.Stderr, "❌ Old file not found:", oldFile)
+			os.Exit(2)
 		}
 		if _, err := os.Stat(newFile); os.IsNotExist(err) {
-			fmt.Println("❌ New file not found:", newFile)
-			return
+			fmt.Fprintln(os.Stderr, "❌ New file not found:", newFile)
+			os.Exit(2)
 		}
 
 		fmt.Println("🔍 Comparing logs...")
 
-		oldErrors := analyzeFile(oldFile, cfg) // ✅ pass cfg
-		newErrors := analyzeFile(newFile, cfg) // ✅ pass cfg
+		oldErrors := analyzeFile(oldFile, cfg)
+		newErrors := analyzeFile(newFile, cfg)
 
 		oldSummary := analyzer.AggregateErrors(oldErrors)
 		newSummary := analyzer.AggregateErrors(newErrors)
 
 		fmt.Println("📊 COMPARISON RESULT")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
 		fmt.Printf("Old Errors: %d\n", oldSummary.TotalErrors)
 		fmt.Printf("New Errors: %d\n\n", newSummary.TotalErrors)
 
@@ -69,107 +65,90 @@ var compareCmd = &cobra.Command{
 		fmt.Println("\n🔍 DETAILED DIFF")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// 🚨 New Errors
+		// ── new errors ────────────────────────────────────────────────────────
 		fmt.Println("\n🚨 New Errors:")
-
 		foundNew := false
-
 		for msg, files := range newMap {
 			if _, exists := oldMap[msg]; !exists {
-
 				count := len(files)
-
 				if count == 1 {
 					fmt.Printf("+ %s (%d time)\n", msg, count)
 				} else {
 					fmt.Printf("+ %s (%d times)\n", msg, count)
 				}
-
 				fmt.Println("  → File:", files[0])
-
 				foundNew = true
 			}
 		}
-
 		if !foundNew {
 			fmt.Println("None")
 		}
 
-		// ✅ Fixed Errors
+		// ── fixed errors ──────────────────────────────────────────────────────
 		fmt.Println("\n✅ Fixed Errors:")
-
 		foundFixed := false
-
 		for msg, files := range oldMap {
 			if _, exists := newMap[msg]; !exists {
-
 				count := len(files)
-
 				if count == 1 {
 					fmt.Printf("- %s (%d time)\n", msg, count)
 				} else {
 					fmt.Printf("- %s (%d times)\n", msg, count)
 				}
-
 				fmt.Println("  → File:", files[0])
-
 				foundFixed = true
 			}
 		}
-
 		if !foundFixed {
 			fmt.Println("None")
 		}
 
-		// ⚖️ Unchanged Errors
+		// ── unchanged errors ──────────────────────────────────────────────────
 		fmt.Println("\n⚖️ Unchanged Errors:")
 		foundSame := false
-
 		for msg, files := range newMap {
 			if _, exists := oldMap[msg]; exists {
-
 				count := len(files)
-
 				if count == 1 {
 					fmt.Printf("= %s (%d time)\n", msg, count)
 				} else {
 					fmt.Printf("= %s (%d times)\n", msg, count)
 				}
-
 				fmt.Println("  → File:", newFile)
-
+				_ = files
 				foundSame = true
 			}
 		}
-
 		if !foundSame {
 			fmt.Println("None")
 		}
 	},
 }
 
-// 🔥 UPDATED: now accepts config
+// ─────────────────────────────────────────────────────────────────────────────
+// analyzeFile reads a log file and returns all detected errors.
+// Used by compare command for both old and new files.
+// ─────────────────────────────────────────────────────────────────────────────
+
 func analyzeFile(file string, cfg *config.Config) []patterns.ErrorMatch {
 
 	var errors []patterns.ErrorMatch
 	var lastError *patterns.ErrorMatch
 
-	input.ProcessFile(file, func(line string, lineNum int) {
+	input.ProcessFile(file, func(parsed input.ParsedLine, lineNum int) {
 
+		// ── context accumulation ──────────────────────────────────────────────
 		if lastError != nil {
-
-			// stop context on empty line
-			if strings.TrimSpace(line) == "" {
+			if strings.TrimSpace(parsed.Raw) == "" { // ✅ fixed
 				lastError = nil
 				return
 			}
-
-			// append stacktrace lines
-			lastError.Context += "\n" + line
+			lastError.Context += "\n" + parsed.Raw // ✅ fixed
 			return
 		}
 
-		e := patterns.DetectError(line, lineNum, "", cfg) // ✅ FIXED
+		// ── error detection ───────────────────────────────────────────────────
+		e := patterns.DetectError(parsed, lineNum, "", cfg) // ✅ fixed
 		if e != nil {
 			errors = append(errors, *e)
 			lastError = &errors[len(errors)-1]
@@ -179,13 +158,12 @@ func analyzeFile(file string, cfg *config.Config) []patterns.ErrorMatch {
 	return errors
 }
 
+// buildErrorMap groups errors by message, mapping message → list of filenames.
 func buildErrorMap(errors []patterns.ErrorMatch, fileName string) map[string][]string {
 	m := make(map[string][]string)
-
 	for _, e := range errors {
 		m[e.Message] = append(m[e.Message], fileName)
 	}
-
 	return m
 }
 
