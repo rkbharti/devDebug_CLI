@@ -35,7 +35,7 @@ func TestExplainError(t *testing.T) {
 		{
 			name:               "timeout message",
 			message:            "request timeout after 30s",
-			wantReasonContains: "timed out",
+			wantReasonContains: "too long",
 			wantSuggContains:   "timeout",
 		},
 
