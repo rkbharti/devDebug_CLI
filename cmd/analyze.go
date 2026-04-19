@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rkbharti/devdebug/internal/analyzer"
 	"github.com/rkbharti/devdebug/internal/config"
@@ -21,6 +22,8 @@ var filterType string
 var outputFormat string
 var follow bool
 var quiet bool // 🆕 --quiet flag
+var sinceFlag string
+var untilFlag string
 
 // ── command definition ────────────────────────────────────────────────────────
 var analyzeCmd = &cobra.Command{
@@ -65,6 +68,7 @@ var analyzeCmd = &cobra.Command{
 
 		// ── filter ────────────────────────────────────────────────────────────
 		summaryData := applyFilter(errors, filterType)
+		summaryData = applyTimeFilter(summaryData, sinceFlag, untilFlag, quiet)
 
 		// ── print report ──────────────────────────────────────────────────────
 		printReport(summaryData, filterType, quiet)
@@ -86,7 +90,9 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&filterType, "type", "t", "", "Filter errors by type (panic, error, timeout)")
 	analyzeCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Export format: json or md")
 	analyzeCmd.Flags().BoolVar(&follow, "follow", false, "Follow log file in real time (watch mode)")
-	analyzeCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output — only exit code (for CI use)") // 🆕
+	analyzeCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output — only exit code (for CI use)")
+	analyzeCmd.Flags().StringVar(&sinceFlag, "since", "", "Show errors after this time  e.g. 2026-04-19T14:00:00")
+	analyzeCmd.Flags().StringVar(&untilFlag, "until", "", "Show errors before this time e.g. 2026-04-19T14:30:00")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,7 +103,7 @@ func handleWatchMode(file string, cfg *config.Config, quiet bool) {
 	printInfo("👀 Watching log file in real-time... (Ctrl+C to stop)", quiet)
 
 	err := input.FollowFile(file, func(line string) {
-		parsed := input.ParseLine(line)   
+		parsed := input.ParseLine(line)
 		e := patterns.DetectError(parsed, 0, "", cfg)
 		if e == nil {
 			return
@@ -205,6 +211,78 @@ func applyFilter(errors []patterns.ErrorMatch, filterType string) []patterns.Err
 		}
 	}
 	return filtered
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyTimeFilter removes errors outside the --since / --until window.
+// Errors with zero timestamp (plain text logs with no timestamp) are always
+// kept — we cannot know when they occurred so we err on the side of inclusion.
+// ─────────────────────────────────────────────────────────────────────────────
+func applyTimeFilter(errors []patterns.ErrorMatch, since string, until string, quiet bool) []patterns.ErrorMatch {
+	if since == "" && until == "" {
+		return errors // nothing to filter
+	}
+
+	var sinceTime, untilTime time.Time
+
+	if since != "" {
+		t, err := parseUserTime(since)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "❌ Invalid --since format:", since)
+			fmt.Fprintln(os.Stderr, "   Use: 2026-04-19T14:00:00  or  2026-04-19 14:00:00")
+			os.Exit(2)
+		}
+		sinceTime = t
+		printInfo(fmt.Sprintf("⏱️  Filtering: since %s", sinceTime.Format(time.RFC3339)), quiet)
+	}
+
+	if until != "" {
+		t, err := parseUserTime(until)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "❌ Invalid --until format:", until)
+			fmt.Fprintln(os.Stderr, "   Use: 2026-04-19T14:30:00  or  2026-04-19 14:30:00")
+			os.Exit(2)
+		}
+		untilTime = t
+		printInfo(fmt.Sprintf("⏱️  Filtering: until %s", untilTime.Format(time.RFC3339)), quiet)
+	}
+
+	var filtered []patterns.ErrorMatch
+
+	for _, e := range errors {
+		// keep errors with no timestamp — cannot filter what we cannot read
+		if e.Timestamp.IsZero() {
+			filtered = append(filtered, e)
+			continue
+		}
+
+		if !sinceTime.IsZero() && e.Timestamp.Before(sinceTime) {
+			continue // too early
+		}
+		if !untilTime.IsZero() && e.Timestamp.After(untilTime) {
+			continue // too late
+		}
+
+		filtered = append(filtered, e)
+	}
+
+	return filtered
+}
+
+// parseUserTime tries two common formats for --since / --until input.
+func parseUserTime(s string) (time.Time, error) {
+	formats := []string{
+		time.RFC3339,          // 2026-04-19T14:00:00Z
+		"2006-01-02T15:04:05", // 2026-04-19T14:00:00  (no timezone — assumed local)
+		"2006-01-02 15:04:05", // 2026-04-19 14:00:00
+		"2006-01-02",          // 2026-04-19  (date only — midnight)
+	}
+	for _, f := range formats {
+		if t, err := time.ParseInLocation(f, s, time.Local); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognised time format: %s", s)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

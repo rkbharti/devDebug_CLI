@@ -2,6 +2,7 @@ package patterns
 
 import (
 	"strings"
+	"time"
 
 	"github.com/rkbharti/devdebug/internal/config"
 	"github.com/rkbharti/devdebug/internal/input"
@@ -13,6 +14,7 @@ type ErrorMatch struct {
 	Message    string
 	Context    string
 	File       string
+	Timestamp  time.Time
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,18 +23,24 @@ type ErrorMatch struct {
 // ─────────────────────────────────────────────────────────────────────────────
 func DetectError(parsed input.ParsedLine, lineNum int, context string, cfg *config.Config) *ErrorMatch {
 
-	// ── skip empty lines ──────────────────────────────────────────────────────
 	if strings.TrimSpace(parsed.Raw) == "" {
 		return nil
 	}
 
-	// ── JSON path: use level field if available ───────────────────────────────
+	var match *ErrorMatch
+
 	if parsed.IsJSON {
-		return detectFromJSON(parsed, lineNum, context, cfg)
+		match = detectFromJSON(parsed, lineNum, context, cfg)
+	} else {
+		match = detectFromPlainText(parsed.Raw, lineNum, context, cfg)
 	}
 
-	// ── plain text path: use keyword matching on raw line ─────────────────────
-	return detectFromPlainText(parsed.Raw, lineNum, context, cfg)
+	// 🆕 attach timestamp from parsed line to the match
+	if match != nil {
+		match.Timestamp = parsed.Timestamp
+	}
+
+	return match
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,22 +50,19 @@ func DetectError(parsed input.ParsedLine, lineNum int, context string, cfg *conf
 // ─────────────────────────────────────────────────────────────────────────────
 func detectFromJSON(parsed input.ParsedLine, lineNum int, context string, cfg *config.Config) *ErrorMatch {
 
-	level := parsed.Level // already lowercased by ParseLine
+	level := parsed.Level
 
-	// ── explicitly non-error levels → skip ───────────────────────────────────
 	if level == "info" || level == "debug" || level == "trace" || level == "warn" || level == "warning" {
 		return nil
 	}
 
-	// ── explicitly error levels → detect ─────────────────────────────────────
 	isErrorLevel := level == "error" || level == "err" ||
 		level == "fatal" || level == "critical" || level == "panic"
 
 	if isErrorLevel {
-		// classify using the extracted message content
 		errType := classifyMessage(parsed.Message, cfg)
 		if errType == "" {
-			errType = "General Error" // level says error — trust it
+			errType = "General Error"
 		}
 		return &ErrorMatch{
 			LineNumber: lineNum,
@@ -67,7 +72,6 @@ func detectFromJSON(parsed input.ParsedLine, lineNum int, context string, cfg *c
 		}
 	}
 
-	// ── no level field or unknown level → fall back to keyword matching ───────
 	return detectFromPlainText(parsed.Message, lineNum, context, cfg)
 }
 
@@ -76,14 +80,12 @@ func detectFromJSON(parsed input.ParsedLine, lineNum int, context string, cfg *c
 // ─────────────────────────────────────────────────────────────────────────────
 func detectFromPlainText(line string, lineNum int, context string, cfg *config.Config) *ErrorMatch {
 
-	// ── noise filter ──────────────────────────────────────────────────────────
 	lower := strings.ToLower(line)
 
 	if strings.Contains(lower, "info") || strings.Contains(lower, "debug") {
 		return nil
 	}
 
-	// ── custom config patterns ────────────────────────────────────────────────
 	if cfg != nil {
 		for _, p := range cfg.Patterns {
 			keyword := strings.TrimSpace(p.Keyword)
@@ -101,7 +103,6 @@ func detectFromPlainText(line string, lineNum int, context string, cfg *config.C
 		}
 	}
 
-	// ── default keyword patterns ──────────────────────────────────────────────
 	errType := classifyMessage(line, nil)
 	if errType == "" {
 		return nil
@@ -123,7 +124,6 @@ func detectFromPlainText(line string, lineNum int, context string, cfg *config.C
 func classifyMessage(message string, cfg *config.Config) string {
 	lower := strings.ToLower(message)
 
-	// custom config first
 	if cfg != nil {
 		for _, p := range cfg.Patterns {
 			keyword := strings.TrimSpace(p.Keyword)
