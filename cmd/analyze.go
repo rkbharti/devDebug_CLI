@@ -16,20 +16,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ── package-level flag vars ───────────────────────────────────────────────────
 var filterType string
 var outputFormat string
 var follow bool
+var quiet bool // 🆕 --quiet flag
 
+// ── command definition ────────────────────────────────────────────────────────
 var analyzeCmd = &cobra.Command{
-	Use:   "analyze [file]",
-	Short: "Analyze log file for errors",
+	Use:   "analyze [file or folder]",
+	Short: "Analyze log file or folder for errors",
 	Args:  cobra.ExactArgs(1),
 
 	Run: func(cmd *cobra.Command, args []string) {
 
+		// ── load config ───────────────────────────────────────────────────────
 		cfg, err := config.LoadConfig("devdebug.yaml")
 		if err != nil {
-			fmt.Println("⚠️ Config not loaded (using default rules)")
+			printInfo("⚠️  Config not loaded (using default rules)", quiet)
 			cfg = nil
 		}
 
@@ -37,246 +41,300 @@ var analyzeCmd = &cobra.Command{
 
 		info, err := os.Stat(file)
 		if err != nil {
-			fmt.Println("❌ Error:", err)
-			return
+			fmt.Fprintln(os.Stderr, "❌ Error:", err)
+			os.Exit(2) // exit 2 = usage/input error (not a log error)
 		}
 
-		fmt.Println(ui.SuccessStyle.Render("✅ File found: " + file))
-		fmt.Println(ui.InfoStyle.Render("🔍 Starting analysis..."))
+		printInfo(ui.SuccessStyle.Render("✅ File found: "+file), quiet)
+		printInfo(ui.InfoStyle.Render("🔍 Starting analysis..."), quiet)
 
-		// 🔥 WATCH MODE
+		// ── watch mode (blocking — exits when interrupted) ────────────────────
 		if follow {
-			fmt.Println("👀 Watching log file in real-time...")
-
-			err := input.FollowFile(file, func(line string) {
-
-				e := patterns.DetectError(line, 0, "", cfg)
-
-				if e != nil {
-					fmt.Println(ui.ErrorStyle.Render("\n🔴 ERROR DETECTED"))
-					fmt.Println("Type:", e.Type)
-					fmt.Println("Message:", e.Message)
-
-					exp := analyzer.ExplainError(e.Message)
-
-					fmt.Println("\nExplanation:")
-					fmt.Println(exp.Reason)
-
-					fmt.Println("\nSuggestion:")
-					fmt.Println(exp.Suggestion)
-				}
-			})
-
-			if err != nil {
-				fmt.Println("❌ Watch failed:", err)
-			}
-
+			handleWatchMode(file, cfg, quiet)
 			return
 		}
 
+		// ── collect errors (folder or single file) ────────────────────────────
 		var errors []patterns.ErrorMatch
 
-		// 🔥 FOLDER MODE
 		if info.IsDir() {
-
-			files, err := os.ReadDir(file)
-			if err != nil {
-				fmt.Println("❌ Failed to read directory:", err)
-				return
-			}
-
-			fmt.Println("📂 Scanning folder:", file)
-
-			for _, f := range files {
-
-				if !strings.HasSuffix(f.Name(), ".log") {
-					continue
-				}
-
-				fullPath := file + "/" + f.Name()
-
-				fmt.Println("📄 Processing:", f.Name())
-
-				var lastError *patterns.ErrorMatch
-
-				input.ProcessFile(fullPath, func(line string, lineNum int) {
-
-					if lastError != nil {
-
-						if strings.TrimSpace(line) == "" {
-							lastError = nil
-							return
-						}
-
-						lastError.Context += "\n" + line
-						return
-					}
-
-					e := patterns.DetectError(line, lineNum, "", cfg)
-					if e != nil {
-						e.File = f.Name()
-						errors = append(errors, *e)
-						lastError = &errors[len(errors)-1]
-					}
-				})
-			}
-
+			errors = handleFolderMode(file, cfg, quiet)
 		} else {
-
-			// 🔥 SINGLE FILE MODE
-			var lastError *patterns.ErrorMatch
-
-			input.ProcessFile(file, func(line string, lineNum int) {
-
-				if lastError != nil {
-
-					if strings.TrimSpace(line) == "" {
-						lastError = nil
-						return
-					}
-
-					lastError.Context += "\n" + line
-					return
-				}
-
-				e := patterns.DetectError(line, lineNum, "", cfg)
-				if e != nil {
-					e.File = file
-					errors = append(errors, *e)
-					lastError = &errors[len(errors)-1]
-				}
-			})
+			errors = handleSingleFileMode(file, cfg)
 		}
 
-		fmt.Println(ui.TitleStyle.Render("\n🚨 ERROR REPORT"))
+		// ── filter ────────────────────────────────────────────────────────────
+		summaryData := applyFilter(errors, filterType)
 
-		if filterType != "" {
-			fmt.Println(
-				ui.InfoStyle.Render("🔍 Showing only:") + " " +
-					ui.WarningStyle.Render(filterType) + " errors",
-			)
-		}
+		// ── print report ──────────────────────────────────────────────────────
+		printReport(summaryData, filterType, quiet)
 
-		// 🔥 FILTER
-		var summaryData []patterns.ErrorMatch
-		for _, e := range errors {
-			if filterType != "" {
-				if !strings.Contains(strings.ToLower(e.Type), strings.ToLower(filterType)) {
-					continue
-				}
-			}
-			summaryData = append(summaryData, e)
-		}
+		// ── export ────────────────────────────────────────────────────────────
+		handleExport(summaryData, outputFormat, quiet)
 
-		// 🔥 GROUPING (Phase 14 Step 3)
-		grouped := make(map[string][]patterns.ErrorMatch)
-		for _, e := range summaryData {
-			grouped[e.Message] = append(grouped[e.Message], e)
-		}
-
-		// 🔥 PRINT GROUPED OUTPUT
-		for msg, group := range grouped {
-
-			count := len(group)
-			e := group[0]
-
-			fmt.Println(ui.ErrorStyle.Render("🔴 ERROR DETECTED"))
-
-			if count == 1 {
-				fmt.Println(ui.InfoStyle.Render(
-					fmt.Sprintf("Log Location: %s (Line %d)", e.File, e.LineNumber),
-				))
-			} else {
-				fmt.Println(ui.WarningStyle.Render(
-					fmt.Sprintf("Occurred %d times", count),
-				))
-			}
-
-			fmt.Println("Type:", e.Type)
-			fmt.Println(ui.InfoStyle.Render("Message:"), msg)
-
-			exp := analyzer.ExplainError(msg)
-
-			fmt.Println(ui.WarningStyle.Render("\nExplanation:"))
-			fmt.Println(exp.Reason)
-
-			fmt.Println(ui.SuccessStyle.Render("\nSuggestion:"))
-			fmt.Println(exp.Suggestion)
-
-			combined := e.Message + " " + e.Context
-			info := stacktrace.ExtractFileLine(combined)
-
-			fmt.Println(ui.InfoStyle.Render("\n Code Location:"))
-			fmt.Println("→ File:", info.File)
-			fmt.Println("→ Line:", info.Line)
-
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		}
-
-		// 🔥 SUMMARY
-		summary := analyzer.AggregateErrors(summaryData)
-
-		fmt.Println(ui.TitleStyle.Render("\n📊 SUMMARY REPORT"))
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-		fmt.Printf("Total Errors: %d\n\n", summary.TotalErrors)
-
-		fmt.Println("Top Issues:")
-		for errType, count := range summary.ErrorCount {
-			if count == 1 {
-				fmt.Printf("• %s → %d time\n", errType, count)
-			} else {
-				fmt.Printf("• %s → %d times\n", errType, count)
-			}
-		}
-
-		// 🔥 FILE SUMMARY
-		fileCount := make(map[string]int)
-		for _, e := range summaryData {
-			fileCount[e.File]++
-		}
-
-		fmt.Println("\n📂 FILE SUMMARY")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-		for file, count := range fileCount {
-			if count == 1 {
-				fmt.Printf("%s → %d error\n", file, count)
-			} else {
-				fmt.Printf("%s → %d errors\n", file, count)
-			}
-		}
-
-		// 🔥 EXPORT
-		if outputFormat != "" {
-
-			var exportErr error
-
-			switch outputFormat {
-			case "json":
-				exportErr = export.ExportJSON(summaryData)
-				fmt.Println("📁 Report exported as report.json")
-
-			case "md":
-				exportErr = export.ExportMarkdown(summaryData)
-				fmt.Println("📁 Report exported as report.md")
-
-			default:
-				fmt.Println("❌ Unsupported format. Use json or md")
-				return
-			}
-
-			if exportErr != nil {
-				fmt.Println("❌ Export failed:", exportErr)
-			}
+		// ── CI gate: exit 1 if any errors were found ──────────────────────────
+		if len(summaryData) > 0 {
+			os.Exit(1)
 		}
 	},
 }
 
+// ── init ──────────────────────────────────────────────────────────────────────
 func init() {
 	rootCmd.AddCommand(analyzeCmd)
 
 	analyzeCmd.Flags().StringVarP(&filterType, "type", "t", "", "Filter errors by type (panic, error, timeout)")
-	analyzeCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Export Format : json or md")
-	analyzeCmd.Flags().BoolVarP(&follow, "follow", "", false, "Follow log file in real time")
+	analyzeCmd.Flags().StringVarP(&outputFormat, "format", "f", "", "Export format: json or md")
+	analyzeCmd.Flags().BoolVar(&follow, "follow", false, "Follow log file in real time (watch mode)")
+	analyzeCmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output — only exit code (for CI use)") // 🆕
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 1 — Watch Mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+func handleWatchMode(file string, cfg *config.Config, quiet bool) {
+	printInfo("👀 Watching log file in real-time... (Ctrl+C to stop)", quiet)
+
+	err := input.FollowFile(file, func(line string) {
+		e := patterns.DetectError(line, 0, "", cfg)
+		if e == nil {
+			return
+		}
+
+		// always print errors even in quiet mode — watch mode is interactive
+		fmt.Println(ui.ErrorStyle.Render("\n🔴 ERROR DETECTED"))
+		fmt.Println("Type   :", e.Type)
+		fmt.Println("Message:", e.Message)
+
+		exp := analyzer.ExplainError(e.Message)
+		fmt.Println("\nExplanation:", exp.Reason)
+		fmt.Println("Suggestion :", exp.Suggestion)
+	})
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌ Watch failed:", err)
+		os.Exit(2)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 2 — Folder Mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+func handleFolderMode(dir string, cfg *config.Config, quiet bool) []patterns.ErrorMatch {
+	printInfo("📂 Scanning folder: "+dir, quiet)
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "❌ Failed to read directory:", err)
+		os.Exit(2)
+	}
+
+	var allErrors []patterns.ErrorMatch
+
+	for _, f := range files {
+		if !strings.HasSuffix(f.Name(), ".log") {
+			continue
+		}
+
+		printInfo("📄 Processing: "+f.Name(), quiet)
+
+		fullPath := dir + "/" + f.Name()
+		fileErrors := collectErrors(fullPath, f.Name(), cfg)
+		allErrors = append(allErrors, fileErrors...)
+	}
+
+	return allErrors
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 3 — Single File Mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+func handleSingleFileMode(file string, cfg *config.Config) []patterns.ErrorMatch {
+	return collectErrors(file, file, cfg)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED — collectErrors (used by both folder and single file)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func collectErrors(filepath string, label string, cfg *config.Config) []patterns.ErrorMatch {
+	var errors []patterns.ErrorMatch
+	var lastError *patterns.ErrorMatch
+
+	input.ProcessFile(filepath, func(line string, lineNum int) {
+
+		// ── context accumulation ──────────────────────────────────────────────
+		if lastError != nil {
+			if strings.TrimSpace(line) == "" {
+				lastError = nil
+				return
+			}
+			lastError.Context += "\n" + line
+			return
+		}
+
+		// ── error detection ───────────────────────────────────────────────────
+		e := patterns.DetectError(line, lineNum, "", cfg)
+		if e != nil {
+			e.File = label
+			errors = append(errors, *e)
+			lastError = &errors[len(errors)-1]
+		}
+	})
+
+	return errors
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 4 — Filter
+// ─────────────────────────────────────────────────────────────────────────────
+
+func applyFilter(errors []patterns.ErrorMatch, filterType string) []patterns.ErrorMatch {
+	if filterType == "" {
+		return errors
+	}
+
+	var filtered []patterns.ErrorMatch
+	for _, e := range errors {
+		if strings.Contains(strings.ToLower(e.Type), strings.ToLower(filterType)) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 5 — Print Report
+// ─────────────────────────────────────────────────────────────────────────────
+
+func printReport(summaryData []patterns.ErrorMatch, filterType string, quiet bool) {
+	if quiet {
+		return // silent mode — no output, only exit code matters
+	}
+
+	fmt.Println(ui.TitleStyle.Render("\n🚨 ERROR REPORT"))
+
+	if filterType != "" {
+		fmt.Println(
+			ui.InfoStyle.Render("🔍 Showing only:") + " " +
+				ui.WarningStyle.Render(filterType) + " errors",
+		)
+	}
+
+	// ── group by message ──────────────────────────────────────────────────────
+	grouped := make(map[string][]patterns.ErrorMatch)
+	for _, e := range summaryData {
+		grouped[e.Message] = append(grouped[e.Message], e)
+	}
+
+	// ── print each group ──────────────────────────────────────────────────────
+	for msg, group := range grouped {
+		count := len(group)
+		e := group[0]
+
+		fmt.Println(ui.ErrorStyle.Render("🔴 ERROR DETECTED"))
+
+		if count == 1 {
+			fmt.Println(ui.InfoStyle.Render(
+				fmt.Sprintf("Log Location: %s (Line %d)", e.File, e.LineNumber),
+			))
+		} else {
+			fmt.Println(ui.WarningStyle.Render(
+				fmt.Sprintf("Occurred %d times", count),
+			))
+		}
+
+		fmt.Println("Type   :", e.Type)
+		fmt.Println(ui.InfoStyle.Render("Message:"), msg)
+
+		exp := analyzer.ExplainError(msg)
+		fmt.Println(ui.WarningStyle.Render("\nExplanation:"))
+		fmt.Println(exp.Reason)
+		fmt.Println(ui.SuccessStyle.Render("\nSuggestion:"))
+		fmt.Println(exp.Suggestion)
+
+		combined := e.Message + " " + e.Context
+		loc := stacktrace.ExtractFileLine(combined)
+		fmt.Println(ui.InfoStyle.Render("\nCode Location:"))
+		fmt.Println("→ File:", loc.File)
+		fmt.Println("→ Line:", loc.Line)
+
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	}
+
+	// ── summary ───────────────────────────────────────────────────────────────
+	summary := analyzer.AggregateErrors(summaryData)
+
+	fmt.Println(ui.TitleStyle.Render("\n📊 SUMMARY REPORT"))
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("Total Errors: %d\n\n", summary.TotalErrors)
+
+	fmt.Println("Top Issues:")
+	for errType, count := range summary.ErrorCount {
+		if count == 1 {
+			fmt.Printf("• %s → %d time\n", errType, count)
+		} else {
+			fmt.Printf("• %s → %d times\n", errType, count)
+		}
+	}
+
+	// ── file summary ──────────────────────────────────────────────────────────
+	fileCount := make(map[string]int)
+	for _, e := range summaryData {
+		fileCount[e.File]++
+	}
+
+	fmt.Println("\n📂 FILE SUMMARY")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	for f, count := range fileCount {
+		if count == 1 {
+			fmt.Printf("%s → %d error\n", f, count)
+		} else {
+			fmt.Printf("%s → %d errors\n", f, count)
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STEP 6 — Export
+// ─────────────────────────────────────────────────────────────────────────────
+
+func handleExport(summaryData []patterns.ErrorMatch, outputFormat string, quiet bool) {
+	if outputFormat == "" {
+		return
+	}
+
+	var exportErr error
+
+	switch outputFormat {
+	case "json":
+		exportErr = export.ExportJSON(summaryData)
+		printInfo("📁 Report exported as report.json", quiet)
+
+	case "md":
+		exportErr = export.ExportMarkdown(summaryData)
+		printInfo("📁 Report exported as report.md", quiet)
+
+	default:
+		fmt.Fprintln(os.Stderr, "❌ Unsupported format. Use: json or md")
+		os.Exit(2)
+	}
+
+	if exportErr != nil {
+		fmt.Fprintln(os.Stderr, "❌ Export failed:", exportErr)
+		os.Exit(2)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER — printInfo respects --quiet flag
+// ─────────────────────────────────────────────────────────────────────────────
+
+func printInfo(msg string, quiet bool) {
+	if !quiet {
+		fmt.Println(msg)
+	}
 }

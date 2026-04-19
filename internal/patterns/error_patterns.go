@@ -64,7 +64,8 @@ func DetectError(line string, lineNum int, context string, cfg *config.Config) *
 
 	if strings.Contains(lower, "error:") ||
 		strings.HasPrefix(lower, "error ") ||
-		strings.Contains(lower, " exception") {
+		strings.Contains(lower, " exception") ||
+		(strings.Contains(lower, "error") && !strings.Contains(lower, "=")) {
 		return &ErrorMatch{
 			LineNumber: lineNum,
 			Type:       "General Error",
@@ -76,7 +77,7 @@ func DetectError(line string, lineNum int, context string, cfg *config.Config) *
 	if strings.Contains(lower, "timeout ") ||
 		strings.Contains(lower, "request timeout") ||
 		strings.Contains(lower, "	timed out") ||
-		strings.Contains(lower, "connection timeout"){
+		strings.Contains(lower, "connection timeout") {
 		return &ErrorMatch{
 			LineNumber: lineNum,
 			Type:       "Timeout Error",
