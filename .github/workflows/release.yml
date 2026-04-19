@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run tests
+        run: go test ./...
+
+  release:
+    name: Build and Release
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build Linux
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o devdebug-linux-amd64 \
+            -ldflags "-X github.com/rkbharti/devdebug/cmd.Version=${{ github.ref_name }} \
+                      -X github.com/rkbharti/devdebug/cmd.CommitHash=${{ github.sha }} \
+                      -X github.com/rkbharti/devdebug/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
+
+      - name: Build Windows
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o devdebug-windows-amd64.exe \
+            -ldflags "-X github.com/rkbharti/devdebug/cmd.Version=${{ github.ref_name }} \
+                      -X github.com/rkbharti/devdebug/cmd.CommitHash=${{ github.sha }} \
+                      -X github.com/rkbharti/devdebug/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
+
+      - name: Build macOS
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -o devdebug-darwin-amd64 \
+            -ldflags "-X github.com/rkbharti/devdebug/cmd.Version=${{ github.ref_name }} \
+                      -X github.com/rkbharti/devdebug/cmd.CommitHash=${{ github.sha }} \
+                      -X github.com/rkbharti/devdebug/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            devdebug-linux-amd64
+            devdebug-windows-amd64.exe
+            devdebug-darwin-amd64
+          generate_release_notes: true
