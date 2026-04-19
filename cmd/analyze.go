@@ -166,7 +166,7 @@ func handleSingleFileMode(file string, compiled []config.CompiledPattern) []patt
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED — collectErrors
 // ─────────────────────────────────────────────────────────────────────────────
-
+// share one-
 func collectErrors(filepath string, label string, compiled []config.CompiledPattern) []patterns.ErrorMatch {
 	var errors []patterns.ErrorMatch
 	var lastError *patterns.ErrorMatch
