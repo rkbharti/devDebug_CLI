@@ -38,30 +38,30 @@ jobs:
 
       - name: Build Linux
         run: |
-          GOOS=linux GOARCH=amd64 go build -o devdebug-linux-amd64 \
-            -ldflags "-X github.com/rkbharti/devdebug/cmd.Version=${{ github.ref_name }} \
-                      -X github.com/rkbharti/devdebug/cmd.CommitHash=${{ github.sha }} \
-                      -X github.com/rkbharti/devdebug/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
+          GOOS=linux GOARCH=amd64 go build -o logsensei-linux-amd64 \
+            -ldflags "-X github.com/rkbharti/LogSensei_CLI/cmd.Version=${{ github.ref_name }} \
+                      -X github.com/rkbharti/LogSensei_CLI/cmd.CommitHash=${{ github.sha }} \
+                      -X github.com/rkbharti/LogSensei_CLI/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
 
       - name: Build Windows
         run: |
-          GOOS=windows GOARCH=amd64 go build -o devdebug-windows-amd64.exe \
-            -ldflags "-X github.com/rkbharti/devdebug/cmd.Version=${{ github.ref_name }} \
-                      -X github.com/rkbharti/devdebug/cmd.CommitHash=${{ github.sha }} \
-                      -X github.com/rkbharti/devdebug/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
+          GOOS=windows GOARCH=amd64 go build -o logsensei-windows-amd64.exe \
+            -ldflags "-X github.com/rkbharti/LogSensei_CLI/cmd.Version=${{ github.ref_name }} \
+                      -X github.com/rkbharti/LogSensei_CLI/cmd.CommitHash=${{ github.sha }} \
+                      -X github.com/rkbharti/LogSensei_CLI/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
 
       - name: Build macOS
         run: |
-          GOOS=darwin GOARCH=amd64 go build -o devdebug-darwin-amd64 \
-            -ldflags "-X github.com/rkbharti/devdebug/cmd.Version=${{ github.ref_name }} \
-                      -X github.com/rkbharti/devdebug/cmd.CommitHash=${{ github.sha }} \
-                      -X github.com/rkbharti/devdebug/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
+          GOOS=darwin GOARCH=amd64 go build -o logsensei-darwin-amd64 \
+            -ldflags "-X github.com/rkbharti/LogSensei_CLI/cmd.Version=${{ github.ref_name }} \
+                      -X github.com/rkbharti/LogSensei_CLI/cmd.CommitHash=${{ github.sha }} \
+                      -X github.com/rkbharti/LogSensei_CLI/cmd.BuildDate=$(date -u +%Y-%m-%d)" .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            devdebug-linux-amd64
-            devdebug-windows-amd64.exe
-            devdebug-darwin-amd64
+            logsensei-linux-amd64
+            logsensei-windows-amd64.exe
+            logsensei-darwin-amd64
           generate_release_notes: true
