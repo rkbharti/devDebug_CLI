@@ -67,6 +67,7 @@ var initYamlCmd = &cobra.Command{
 		fmt.Println("  devdebug analyze <your-log-file>")
 	},
 }
+// hey
 
 func init() {
 	rootCmd.AddCommand(initYamlCmd)
