@@ -1,6 +1,6 @@
 package analyzer
 
-import "github.com/rkbharti/devdebug/internal/patterns"
+import "github.com/rkbharti/LogSensei_CLI/internal/patterns"
 
 // made struct for error count and total erros
 

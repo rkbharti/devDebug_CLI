@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rkbharti/devdebug/internal/config"
-	"github.com/rkbharti/devdebug/internal/input"
+	"github.com/rkbharti/LogSensei_CLI/internal/config"
+	"github.com/rkbharti/LogSensei_CLI/internal/input"
 )
 
 type ErrorMatch struct {

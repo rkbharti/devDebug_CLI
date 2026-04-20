@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rkbharti/devdebug/internal/analyzer"
-	"github.com/rkbharti/devdebug/internal/config"
-	"github.com/rkbharti/devdebug/internal/input"
-	"github.com/rkbharti/devdebug/internal/patterns"
+	"github.com/rkbharti/LogSensei_CLI/internal/analyzer"
+	"github.com/rkbharti/LogSensei_CLI/internal/config"
+	"github.com/rkbharti/LogSensei_CLI/internal/input"
+	"github.com/rkbharti/LogSensei_CLI/internal/patterns"
 
 	"github.com/spf13/cobra"
 )

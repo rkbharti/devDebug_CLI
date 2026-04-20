@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rkbharti/devdebug/internal/patterns"
+	"github.com/rkbharti/LogSensei_CLI/internal/patterns"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

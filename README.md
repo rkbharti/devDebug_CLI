@@ -1,32 +1,34 @@
+# LogSensei
 
-# devdebug
-![devdebug demo](docs/devdebug.gif)
+<p align="center">
+  <img src="docs/logsensei.gif" alt="LogSensei demo" />
+</p>
 
 A fast, smart CLI tool that analyzes log files and surfaces real errors instantly.
 Supports plain text and JSON logs, custom patterns, real-time watching, and multi-format export.
 
 ## Install
 
-Download the latest binary from [Releases](https://github.com/rkbharti/devdebug_CLI/releases):
+Download the latest binary from [Releases](https://github.com/rkbharti/LogSensei_CLI/releases):
 
-| Platform | Binary                       |
-| -------- | ---------------------------- |
-| Windows  | `devdebug-windows-amd64.exe` |
-| Linux    | `devdebug-linux-amd64`       |
-| macOS    | `devdebug-darwin-amd64`      |
+| Platform | Binary                        |
+| -------- | ----------------------------- |
+| Windows  | `logsensei-windows-amd64.exe` |
+| Linux    | `logsensei-linux-amd64`       |
+| macOS    | `logsensei-darwin-amd64`      |
 
 Or build from source (requires Go 1.22+):
 
-    git clone https://github.com/rkbharti/devdebug_CLI.git
-    cd devdebug_CLI
-    go build -o devdebug .
+    git clone https://github.com/rkbharti/LogSensei_CLI.git
+    cd LogSensei_CLI
+    go build -o logsensei .
 
 ## Commands
 
-    devdebug analyze <file|folder>   Scan log file or folder for errors
-    devdebug compare <old> <new>     Diff two log files
-    devdebug init                    Generate starter devdebug.yaml
-    devdebug version                 Print version info
+    logsensei analyze <file|folder>   Scan log file or folder for errors
+    logsensei compare <old> <new>     Diff two log files
+    logsensei init                    Generate starter logsensei.yaml
+    logsensei version                 Print version info
 
 ## Analyze Flags
 
@@ -37,9 +39,9 @@ Or build from source (requires Go 1.22+):
     --since   Show errors after time  e.g. 2026-04-19T10:00:00
     --until   Show errors before time e.g. 2026-04-19T18:00:00
 
-## Custom Patterns (devdebug.yaml)
+## Custom Patterns (logsensei.yaml)
 
-Run `devdebug init` to generate a starter config, then edit it:
+Run `logsensei init` to generate a starter config, then edit it:
 
     patterns:
       - name: "Auth Failure"
@@ -51,32 +53,32 @@ Run `devdebug init` to generate a starter config, then edit it:
       - name: "Retry Exhausted"
         regex: "(?i)failed after [0-9]+ retr"
 
-Place `devdebug.yaml` in the same directory where you run the command.
+Place `logsensei.yaml` in the same directory where you run the command.
 
 ## Examples
 
     # analyze a log file
-    devdebug analyze app.log
+    logsensei analyze app.log
 
     # filter only panic errors
-    devdebug analyze app.log --type panic
+    logsensei analyze app.log --type panic
 
     # export as JSON report
-    devdebug analyze app.log --format json
+    logsensei analyze app.log --format json
 
     # watch a live log file
-    devdebug analyze app.log --follow
+    logsensei analyze app.log --follow
 
     # compare two log files
-    devdebug compare old.log new.log
+    logsensei compare old.log new.log
 
     # use in CI pipelines (exit 1 if errors found)
-    devdebug analyze app.log --quiet
+    logsensei analyze app.log --quiet
 
 ## CI Usage
 
     - name: Check logs for errors
-      run: devdebug analyze app.log --quiet
+      run: logsensei analyze app.log --quiet
 
 Exit code `0` = no errors. Exit code `1` = errors found.
 

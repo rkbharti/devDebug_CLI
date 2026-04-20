@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"os"
+
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "devdebug",
-	Short: "A smart debugging CLI tool",
+	Use:   "logsensei",
+	Short: "LogSensei — A fast, smart CLI log analyzer",
 }
 
 func Execute() {

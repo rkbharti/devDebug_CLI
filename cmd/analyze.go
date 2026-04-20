@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rkbharti/devdebug/internal/analyzer"
-	"github.com/rkbharti/devdebug/internal/config"
-	"github.com/rkbharti/devdebug/internal/export"
-	"github.com/rkbharti/devdebug/internal/input"
-	"github.com/rkbharti/devdebug/internal/patterns"
-	"github.com/rkbharti/devdebug/internal/stacktrace"
-	"github.com/rkbharti/devdebug/internal/ui"
+	"github.com/rkbharti/LogSensei_CLI/internal/analyzer"
+	"github.com/rkbharti/LogSensei_CLI/internal/config"
+	"github.com/rkbharti/LogSensei_CLI/internal/export"
+	"github.com/rkbharti/LogSensei_CLI/internal/input"
+	"github.com/rkbharti/LogSensei_CLI/internal/patterns"
+	"github.com/rkbharti/LogSensei_CLI/internal/stacktrace"
+	"github.com/rkbharti/LogSensei_CLI/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -34,12 +34,12 @@ var analyzeCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 
 		// ── load config ───────────────────────────────────────────────────────
-		cfg, err := config.LoadConfig("devdebug.yaml")
+		cfg, err := config.LoadConfig("logsensei.yaml")
 		if err != nil {
 			printInfo("⚠️  Config not loaded (using default rules)", quiet)
 			cfg = nil
 		}
-		compiled := cfg.Compile() // ✅ compile once, reuse for every line
+		compiled := cfg.Compile()
 
 		file := args[0]
 
@@ -105,7 +105,7 @@ func handleWatchMode(file string, compiled []config.CompiledPattern, quiet bool)
 
 	err := input.FollowFile(file, func(line string) {
 		parsed := input.ParseLine(line)
-		e := patterns.DetectError(parsed, 0, "", compiled) // ✅
+		e := patterns.DetectError(parsed, 0, "", compiled)
 		if e == nil {
 			return
 		}
@@ -148,7 +148,7 @@ func handleFolderMode(dir string, compiled []config.CompiledPattern, quiet bool)
 		printInfo("📄 Processing: "+f.Name(), quiet)
 
 		fullPath := dir + "/" + f.Name()
-		fileErrors := collectErrors(fullPath, f.Name(), compiled) // ✅
+		fileErrors := collectErrors(fullPath, f.Name(), compiled)
 		allErrors = append(allErrors, fileErrors...)
 	}
 
@@ -160,26 +160,24 @@ func handleFolderMode(dir string, compiled []config.CompiledPattern, quiet bool)
 // ─────────────────────────────────────────────────────────────────────────────
 
 func handleSingleFileMode(file string, compiled []config.CompiledPattern) []patterns.ErrorMatch {
-	return collectErrors(file, file, compiled) // ✅
+	return collectErrors(file, file, compiled)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED — collectErrors
 // ─────────────────────────────────────────────────────────────────────────────
-// share one-
+
 func collectErrors(filepath string, label string, compiled []config.CompiledPattern) []patterns.ErrorMatch {
 	var errors []patterns.ErrorMatch
 	var lastError *patterns.ErrorMatch
 
 	input.ProcessFile(filepath, func(parsed input.ParsedLine, lineNum int) {
 
-		// blank line — always ends context accumulation
 		if strings.TrimSpace(parsed.Raw) == "" {
 			lastError = nil
 			return
 		}
 
-		// if this line is itself a new error, start fresh regardless of lastError
 		if e := patterns.DetectError(parsed, lineNum, "", compiled); e != nil {
 			e.File = label
 			errors = append(errors, *e)
@@ -187,7 +185,6 @@ func collectErrors(filepath string, label string, compiled []config.CompiledPatt
 			return
 		}
 
-		// not an error — append as context to the previous error if one exists
 		if lastError != nil {
 			lastError.Context += "\n" + parsed.Raw
 		}
@@ -215,8 +212,7 @@ func applyFilter(errors []patterns.ErrorMatch, filterType string) []patterns.Err
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// applyTimeFilter — removes errors outside the --since / --until window.
-// Errors with zero timestamp (plain text) are always kept.
+// applyTimeFilter
 // ─────────────────────────────────────────────────────────────────────────────
 
 func applyTimeFilter(errors []patterns.ErrorMatch, since string, until string, quiet bool) []patterns.ErrorMatch {

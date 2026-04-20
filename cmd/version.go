@@ -16,9 +16,9 @@ var (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Print devdebug version information",
+	Short: "Print LogSensei version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("devdebug %s\n", Version)
+		fmt.Printf("LogSensei %s\n", Version)
 		fmt.Printf("Commit : %s\n", CommitHash)
 		fmt.Printf("Built  : %s\n", BuildDate)
 	},
